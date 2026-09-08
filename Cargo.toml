@@ -1,0 +1,45 @@
+[package]
+name = "isogrid"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85.0"
+description = "A small, domain-agnostic isometric engine: 2:1 projection, height-mapped tile grids, a fixed-timestep simulation loop, grid pathfinding and a pluggable renderer."
+authors = ["Diego Gomes <diego.gomes87@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/digomes87/isogrid"
+homepage = "https://github.com/digomes87/isogrid"
+documentation = "https://docs.rs/isogrid"
+readme = "README.md"
+keywords = ["isometric", "gamedev", "tilemap", "pathfinding", "engine"]
+categories = ["game-engines", "game-development"]
+exclude = ["/.github", "/docs", "/book"]
+
+[features]
+default = []
+## Serialize and deserialize engine data types with `serde`.
+serde = ["dep:serde"]
+## Draw through a `macroquad` window and event loop.
+macroquad-backend = ["dep:macroquad"]
+
+[dependencies]
+glam = "0.30"
+thiserror = "2"
+tracing = "0.1"
+serde = { version = "1", features = ["derive"], optional = true }
+macroquad = { version = "0.4", optional = true }
+
+[dev-dependencies]
+criterion = { version = "0.7", features = ["html_reports"] }
+insta = { version = "1", features = ["ron"] }
+proptest = "1"
+serde_json = "1"
+
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
