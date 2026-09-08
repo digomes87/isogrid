@@ -22,7 +22,7 @@ serde = ["dep:serde"]
 macroquad-backend = ["dep:macroquad"]
 
 [dependencies]
-glam = "0.30"
+glam = "0.33"
 thiserror = "2"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"], optional = true }
