@@ -26,12 +26,24 @@ pub enum Error {
     },
 
     /// A grid was asked for with a zero dimension, or one too large to address.
-    #[error("invalid grid size {width}x{height}: both dimensions must be non-zero, and their product must fit in a usize")]
+    #[error(
+        "invalid grid size {width}x{height}: both dimensions must be non-zero \
+         and their product must not exceed Grid::MAX_TILES"
+    )]
     InvalidGridSize {
         /// The requested width in tiles.
         width: u32,
         /// The requested height in tiles.
         height: u32,
+    },
+
+    /// A viewport was given a zero, negative or non-finite dimension.
+    #[error("invalid viewport {width}x{height}: both dimensions must be finite and positive")]
+    InvalidViewport {
+        /// The rejected width in pixels.
+        width: f32,
+        /// The rejected height in pixels.
+        height: f32,
     },
 
     /// A zoom range was empty, inverted or not a number.

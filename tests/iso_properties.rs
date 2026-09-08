@@ -23,6 +23,11 @@ fn tile_size() -> impl Strategy<Value = TileSize> {
 }
 
 proptest! {
+    // Integration tests live outside `src`, where proptest cannot find a crate
+    // root to persist regression files against. Shrunken counter-examples are
+    // still printed on failure; they are simply not written to disk.
+    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+
     /// Unprojecting a projected point returns the point it started from.
     #[test]
     fn screen_to_grid_inverts_grid_to_screen(
