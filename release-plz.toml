@@ -1,0 +1,26 @@
+[workspace]
+# The changelog is for people reading the release notes, so keep the noise out
+# of it: dependency bumps and CI plumbing do not belong there.
+changelog_update = true
+git_release_enable = true
+git_tag_enable = true
+semver_check = true
+publish = true
+
+[changelog]
+protect_breaking_commits = true
+sort_commits = "oldest"
+
+commit_parsers = [
+  { message = "^feat", group = "Added" },
+  { message = "^fix", group = "Fixed" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs", group = "Documentation" },
+  { message = "^test", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^build", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^bench", skip = true },
+  { body = ".*security", group = "Security" },
+]
