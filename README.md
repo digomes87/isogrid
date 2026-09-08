@@ -46,7 +46,8 @@ isogrid = "0.1"
 | Feature | Default | Description |
 | --- | --- | --- |
 | `serde` | no | Derive `Serialize`/`Deserialize` for engine data types. |
-| `macroquad-backend` | no | A renderer and window loop built on `macroquad`. |
+
+A rendering backend feature will land with the renderer abstraction.
 
 ## Minimum supported Rust version
 
