@@ -205,7 +205,9 @@ pub trait Renderer {
 /// # Ok::<(), isogrid::Error>(())
 /// ```
 pub fn draw_tiles<T>(
-    renderer: &mut impl Renderer,
+    // `?Sized` so that a `&mut dyn Renderer` — which is what `App::draw` hands
+    // a game — can be passed straight through.
+    renderer: &mut (impl Renderer + ?Sized),
     camera: &Camera,
     grid: &Grid<T>,
     mut colour_of: impl FnMut(TilePos, &T) -> Option<Color>,
