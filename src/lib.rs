@@ -31,5 +31,7 @@ pub mod camera;
 pub mod error;
 pub mod grid;
 pub mod iso;
+pub mod rng;
+pub mod time;
 
 pub use error::{Error, Result};

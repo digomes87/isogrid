@@ -30,6 +30,11 @@ fn camera() -> impl Strategy<Value = Camera> {
 }
 
 proptest! {
+    // Integration tests live outside `src`, where proptest cannot find a crate
+    // root to persist regression files against. Shrunken counter-examples are
+    // still printed on failure; they are simply not written to disk.
+    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+
     /// Whatever the pan and zoom, the projection stays invertible.
     #[test]
     fn screen_and_world_round_trip(camera in camera(), x in -256.0f32..256.0, y in -256.0f32..256.0) {

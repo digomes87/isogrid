@@ -3,6 +3,10 @@
 //! The two things that must never break: addressing agrees with iteration, and
 //! draw order is a permutation of the grid that is sorted back to front.
 
+// Grid dimensions are capped well below `i32::MAX`, so folding a `u32`
+// coordinate into one cannot wrap.
+#![allow(clippy::cast_possible_wrap)]
+
 use isogrid::grid::Grid;
 use isogrid::iso::TilePos;
 use proptest::prelude::*;
@@ -14,6 +18,11 @@ fn dimension() -> impl Strategy<Value = u32> {
 }
 
 proptest! {
+    // Integration tests live outside `src`, where proptest cannot find a crate
+    // root to persist regression files against. Shrunken counter-examples are
+    // still printed on failure; they are simply not written to disk.
+    #![proptest_config(ProptestConfig { failure_persistence: None, ..ProptestConfig::default() })]
+
     /// Every tile the grid reports as inside can be read, and every tile it
     /// reports as outside cannot.
     #[test]
@@ -73,10 +82,12 @@ proptest! {
 
     /// A tile is a neighbour of its neighbours, and never of itself.
     #[test]
-    fn neighbourhood_is_symmetric(w in dimension(), h in dimension(), x in 0i32..48, y in 0i32..48) {
+    fn neighbourhood_is_symmetric(w in dimension(), h in dimension(), x in 0u32.., y in 0u32..) {
         let grid = Grid::filled(w, h, ())?;
-        let tile = TilePos::new(x, y);
-        prop_assume!(grid.contains(tile));
+        // Fold the coordinates into the grid rather than rejecting the ones
+        // that fall outside it, which starves the strategy on small grids.
+        let tile = TilePos::new((x % w) as i32, (y % h) as i32);
+        prop_assert!(grid.contains(tile));
 
         for neighbour in grid.neighbours(tile) {
             prop_assert_ne!(neighbour, tile);
