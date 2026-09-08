@@ -15,5 +15,5 @@
 - [ ] `just check` passes locally (fmt + clippy + test + doc)
 - [ ] New public items have rustdoc with an executable example
 - [ ] Behaviour changes are covered by tests
-- [ ] `CHANGELOG.md` is updated (or the change is `chore:`/`ci:` only)
+- [ ] The commit type is right — `release-plz` builds the changelog from it
 - [ ] Commits follow [Conventional Commits](https://www.conventionalcommits.org/)

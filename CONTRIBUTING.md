@@ -42,8 +42,17 @@ docs(adr): record why macroquad was chosen over wgpu
 ```
 
 Types in use: `feat`, `fix`, `docs`, `refactor`, `test`, `perf`, `chore`, `ci`,
-`build`. A breaking change gets a `!` (`feat!:`) and a `BREAKING CHANGE:` footer;
-releases are cut from these by `release-plz`.
+`build`. A breaking change gets a `!` (`feat!:`) and a `BREAKING CHANGE:` footer.
+
+Releases are cut from these commits by
+[`release-plz`](https://release-plz.dev): merging to `main` updates a standing
+"chore: release" pull request holding the version bump and the changelog, and
+merging *that* tags the commit, publishes to crates.io and cuts the GitHub
+release. `release-plz.toml` decides which commit types reach the changelog —
+`test`, `ci`, `build` and `chore` are deliberately left out of it, because a
+changelog is for people reading release notes.
+
+Nothing needs to be added to `CHANGELOG.md` by hand.
 
 ## Tests
 
