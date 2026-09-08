@@ -18,12 +18,15 @@ exclude = ["/.github", "/docs", "/book"]
 default = []
 ## Serialize and deserialize engine data types with `serde`.
 serde = ["dep:serde"]
+## Draw through a `macroquad` window and event loop.
+macroquad-backend = ["dep:macroquad"]
 
 [dependencies]
 glam = "0.33"
 thiserror = "2"
 tracing = "0.1"
 serde = { version = "1", features = ["derive"], optional = true }
+macroquad = { version = "0.4", optional = true, default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.8", features = ["html_reports"] }
