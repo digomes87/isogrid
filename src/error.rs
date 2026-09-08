@@ -37,6 +37,15 @@ pub enum Error {
         height: u32,
     },
 
+    /// A viewport was given a zero, negative or non-finite dimension.
+    #[error("invalid viewport {width}x{height}: both dimensions must be finite and positive")]
+    InvalidViewport {
+        /// The rejected width in pixels.
+        width: f32,
+        /// The rejected height in pixels.
+        height: f32,
+    },
+
     /// A zoom range was empty, inverted or not a number.
     #[error("invalid zoom range {min}..={max}: both bounds must be finite and positive, with min <= max")]
     InvalidZoomRange {

@@ -27,6 +27,7 @@
 
 #![doc(html_root_url = "https://docs.rs/isogrid")]
 
+pub mod camera;
 pub mod error;
 pub mod grid;
 pub mod iso;
