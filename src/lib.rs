@@ -28,6 +28,7 @@
 #![doc(html_root_url = "https://docs.rs/isogrid")]
 
 pub mod error;
+pub mod grid;
 pub mod iso;
 
 pub use error::{Error, Result};
