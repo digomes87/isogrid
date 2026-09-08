@@ -29,6 +29,20 @@ Early and honest about it. The public API will move before `1.0`.
 isogrid = "0.1"
 ```
 
+## What is in the box
+
+| Module | What it does |
+| --- | --- |
+| `iso` | 2:1 projection between grid space and screen space, and the draw-order depth key. |
+| `grid` | Rectangular tile storage, iteration orders, regions and culling. |
+| `camera` | Pan, zoom anchored on the cursor, viewport, and what is on screen. |
+| `path` | A\* over anything that can price a step. |
+| `time` | Fixed-timestep clock: real time in, whole ticks out. |
+| `rng` | Seeded, reproducible random numbers. |
+| `input` | Backend-agnostic pointer and keyboard state. |
+| `render` | The `Renderer` trait, tile painting, and a recording test double. |
+| `backend` | Graphics-library implementations, behind feature flags. |
+
 ## Design goals
 
 - **Deterministic.** The same seed and the same inputs produce the same world
@@ -46,12 +60,20 @@ isogrid = "0.1"
 | Feature | Default | Description |
 | --- | --- | --- |
 | `serde` | no | Derive `Serialize`/`Deserialize` for engine data types. |
+| `macroquad-backend` | no | A renderer and window loop built on [`macroquad`](https://macroquad.rs). |
 
-A rendering backend feature will land with the renderer abstraction.
+Drawing sits behind the `render::Renderer` trait, so a backend is replaceable
+and drawing code can be tested headlessly against `render::Recorder`. See
+[ADR 0004](docs/adr/0004-macroquad-first.md) for why macroquad, and for the
+security advisories that come with enabling it.
 
 ## Minimum supported Rust version
 
-`1.85.0`. Raising the MSRV is a minor version bump and is tested in CI.
+`1.85.0` for the crate itself, tested in CI; raising it is a minor version bump.
+
+The `macroquad-backend` feature follows macroquad's own MSRV, which is higher.
+The promise covers this crate's code, not a graphics library's dependency tree —
+see [ADR 0004](docs/adr/0004-macroquad-first.md).
 
 ## Documentation
 

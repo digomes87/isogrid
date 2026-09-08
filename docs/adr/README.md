@@ -16,6 +16,7 @@ that supersedes the old one and mark the old one as superseded.
 | [0001](0001-two-crates.md) | Split the engine and the game into two crates | Accepted |
 | [0002](0002-integer-fixed-timestep.md) | Fixed timestep with an integer accumulator | Accepted |
 | [0003](0003-bundled-rng.md) | Bundle a generator instead of depending on `rand` | Accepted |
+| [0004](0004-macroquad-first.md) | Start with macroquad behind a renderer trait | Accepted |
 
 ## Template
 

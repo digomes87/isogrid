@@ -27,11 +27,14 @@
 
 #![doc(html_root_url = "https://docs.rs/isogrid")]
 
+pub mod backend;
 pub mod camera;
 pub mod error;
 pub mod grid;
+pub mod input;
 pub mod iso;
 pub mod path;
+pub mod render;
 pub mod rng;
 pub mod time;
 
