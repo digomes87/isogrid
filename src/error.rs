@@ -26,7 +26,10 @@ pub enum Error {
     },
 
     /// A grid was asked for with a zero dimension, or one too large to address.
-    #[error("invalid grid size {width}x{height}: both dimensions must be non-zero, and their product must fit in a usize")]
+    #[error(
+        "invalid grid size {width}x{height}: both dimensions must be non-zero \
+         and their product must not exceed Grid::MAX_TILES"
+    )]
     InvalidGridSize {
         /// The requested width in tiles.
         width: u32,
