@@ -71,6 +71,45 @@ pub enum Key {
     Plus,
     /// Zoom out.
     Minus,
+    /// A number key along the top of the keyboard, from 0 to 9.
+    ///
+    /// The engine has no opinion about what a number means — it is the row
+    /// every tile game ends up binding a toolbar to, and a game cannot bind one
+    /// to keys the backend never reports. Values outside 0 to 9 are not
+    /// produced by any backend; [`Key::digit`] is the way to build one without
+    /// having to check.
+    Digit(u8),
+}
+
+impl Key {
+    /// The number key for `digit`, or `None` if there is no such key.
+    ///
+    /// ```
+    /// # use isogrid::input::Key;
+    /// assert_eq!(Key::digit(3), Some(Key::Digit(3)));
+    /// assert_eq!(Key::digit(10), None, "there is no tenth number key");
+    /// ```
+    pub const fn digit(digit: u8) -> Option<Self> {
+        if digit <= 9 {
+            Some(Self::Digit(digit))
+        } else {
+            None
+        }
+    }
+
+    /// Which number this key is, if it is a number key.
+    ///
+    /// ```
+    /// # use isogrid::input::Key;
+    /// assert_eq!(Key::Digit(7).as_digit(), Some(7));
+    /// assert_eq!(Key::Space.as_digit(), None);
+    /// ```
+    pub const fn as_digit(self) -> Option<u8> {
+        match self {
+            Self::Digit(digit) => Some(digit),
+            _ => None,
+        }
+    }
 }
 
 /// The pointer and keyboard, for one frame.
@@ -253,5 +292,39 @@ mod tests {
         for button in Button::ALL {
             assert_eq!(input.button_down(button), button == Button::Right);
         }
+    }
+    #[test]
+    fn a_number_key_is_only_built_for_a_number_there_is() {
+        for digit in 0..=9 {
+            assert_eq!(Key::digit(digit), Some(Key::Digit(digit)));
+            assert_eq!(Key::Digit(digit).as_digit(), Some(digit));
+        }
+
+        assert_eq!(Key::digit(10), None);
+        assert_eq!(Key::Escape.as_digit(), None);
+    }
+
+    #[test]
+    fn number_keys_are_tracked_one_at_a_time() {
+        let mut input = Input::default();
+        input.begin_frame(ScreenPoint::ZERO);
+        input.press_key(Key::Digit(2));
+
+        assert!(input.key_pressed(Key::Digit(2)));
+        assert!(input.key_down(Key::Digit(2)));
+        assert!(
+            !input.key_down(Key::Digit(3)),
+            "one number key stood in for another"
+        );
+
+        input.begin_frame(ScreenPoint::ZERO);
+        assert!(
+            !input.key_pressed(Key::Digit(2)),
+            "still pressed a frame on"
+        );
+        assert!(input.key_down(Key::Digit(2)), "but still held");
+
+        input.release_key(Key::Digit(2));
+        assert!(!input.key_down(Key::Digit(2)));
     }
 }
