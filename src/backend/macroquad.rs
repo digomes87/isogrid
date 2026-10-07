@@ -36,6 +36,8 @@ use crate::iso::ScreenPoint;
 use crate::render::{Color, Renderer, TileShape};
 use crate::time::{Clock, Tick, TickRate};
 
+use super::step;
+
 /// A game the backend can run.
 ///
 /// [`App::tick`] advances the simulation by exactly one fixed step and is where
@@ -126,10 +128,12 @@ impl Renderer for MacroquadRenderer {
     }
 }
 
-/// Reads macroquad's input into an engine [`Input`] for this frame.
+/// Adds what macroquad saw this frame to an engine [`Input`].
 fn read_input(input: &mut Input) {
+    // Nothing is cleared here: `step` clears the edge state after each tick, so
+    // a press survives the frames that run no tick.
     let (x, y) = mq::mouse_position();
-    input.begin_frame(ScreenPoint::new(x, y));
+    input.move_pointer(ScreenPoint::new(x, y));
 
     for (button, mq_button) in [
         (Button::Left, mq::MouseButton::Left),
@@ -195,9 +199,9 @@ pub async fn run(mut app: impl App, rate: TickRate) {
         read_input(&mut input);
 
         let frame = core::time::Duration::from_secs_f32(mq::get_frame_time().max(0.0));
-        for tick in clock.advance(frame) {
-            app.tick(tick, &input);
-        }
+        step(&mut clock, &mut input, frame, |tick, input| {
+            app.tick(tick, input);
+        });
 
         app.draw(&mut canvas, clock.alpha());
 
