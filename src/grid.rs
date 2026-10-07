@@ -549,6 +549,37 @@ mod tests {
     }
 
     #[test]
+    fn bounds_at_the_edge_of_i32_do_not_overflow() {
+        // `x + y` does not fit in an `i32` out here, and a camera pointed far
+        // enough away produces exactly these bounds.
+        let far = TilePos::new(i32::MAX, i32::MAX);
+        let corner = TileBounds::new(far.offset(-1, -1), far);
+        let order: Vec<_> = corner.draw_order().collect();
+        assert_eq!(order.len(), 4);
+        assert_eq!(order.first(), Some(&far.offset(-1, -1)));
+        assert_eq!(order.last(), Some(&far));
+
+        let near = TilePos::new(i32::MIN, i32::MIN);
+        assert_eq!(
+            TileBounds::new(near, near.offset(1, 1))
+                .draw_order()
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn bounds_spanning_all_of_i32_report_a_saturated_size() {
+        let everything = TileBounds::new(
+            TilePos::new(i32::MIN, i32::MIN),
+            TilePos::new(i32::MAX, i32::MAX),
+        );
+        assert_eq!(everything.width(), u32::MAX);
+        assert_eq!(everything.height(), u32::MAX);
+        assert_eq!(everything.len(), u64::MAX);
+    }
+
+    #[test]
     fn bounds_draw_order_covers_the_region_once_back_to_front() {
         let bounds = TileBounds::new(TilePos::new(-2, 3), TilePos::new(1, 6));
         let mut seen = Vec::new();
@@ -647,13 +678,18 @@ impl TileBounds {
     }
 
     /// The width of the region in tiles.
+    ///
+    /// Saturates at `u32::MAX` for bounds spanning the whole of `i32`, which
+    /// are one tile wider than a `u32` can say.
     pub const fn width(self) -> u32 {
-        self.max.x.abs_diff(self.min.x) + 1
+        self.max.x.abs_diff(self.min.x).saturating_add(1)
     }
 
     /// The height of the region in tiles.
+    ///
+    /// Saturates in the same way as [`TileBounds::width`].
     pub const fn height(self) -> u32 {
-        self.max.y.abs_diff(self.min.y) + 1
+        self.max.y.abs_diff(self.min.y).saturating_add(1)
     }
 
     /// The number of tiles in the region.
@@ -664,7 +700,10 @@ impl TileBounds {
     /// assert_eq!(TileBounds::new(TilePos::ORIGIN, TilePos::ORIGIN).len(), 1);
     /// ```
     pub const fn len(self) -> u64 {
-        self.width() as u64 * self.height() as u64
+        let width = self.max.x.abs_diff(self.min.x) as u64 + 1;
+        let height = self.max.y.abs_diff(self.min.y) as u64 + 1;
+        // Only bounds covering all of `i32` on both axes reach 2^64 exactly.
+        width.saturating_mul(height)
     }
 
     /// Always `false`; bounds always contain at least the tile they started at.
@@ -728,13 +767,16 @@ impl TileBounds {
     /// assert_eq!(order.last(), Some(&TilePos::new(2, 2)));
     /// ```
     pub fn draw_order(self) -> impl Iterator<Item = TilePos> {
-        let (min, max) = (self.min, self.max);
-        let first = min.x + min.y;
-        let last = max.x + max.y;
-        (first..=last).flat_map(move |diagonal| {
-            let first_x = min.x.max(diagonal - max.y);
-            let last_x = max.x.min(diagonal - min.y);
-            (first_x..=last_x).map(move |x| TilePos::new(x, diagonal - x))
+        // A diagonal is `x + y`, which needs 33 bits at the corners of `i32`.
+        // Everything derived from it is clamped back into the bounds, so the
+        // narrowing casts below cannot lose anything.
+        let (min_x, min_y) = (i64::from(self.min.x), i64::from(self.min.y));
+        let (max_x, max_y) = (i64::from(self.max.x), i64::from(self.max.y));
+        (min_x + min_y..=max_x + max_y).flat_map(move |diagonal| {
+            let first_x = min_x.max(diagonal - max_y);
+            let last_x = max_x.min(diagonal - min_y);
+            #[allow(clippy::cast_possible_truncation)]
+            (first_x..=last_x).map(move |x| TilePos::new(x as i32, (diagonal - x) as i32))
         })
     }
 }
