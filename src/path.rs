@@ -311,6 +311,11 @@ impl PathFinder {
     /// entered. A start that equals the goal yields a path of one tile and zero
     /// cost.
     ///
+    /// Also returns `None`, without searching, for a map whose
+    /// [bounds](Traversable::bounds) cover more than [`Grid::MAX_TILES`] tiles:
+    /// the search keeps one node per tile, and a map that size could not have
+    /// been stored in a [`Grid`] in the first place.
+    ///
     /// ```
     /// # use isogrid::grid::Grid;
     /// # use isogrid::iso::TilePos;
@@ -335,7 +340,9 @@ impl PathFinder {
             return None;
         }
 
-        self.prepare(bounds);
+        if !self.prepare(bounds) {
+            return None;
+        }
         let step = map.min_step_cost().get();
 
         if start == goal {
@@ -400,18 +407,31 @@ impl PathFinder {
     }
 
     /// Resizes the buffers for `bounds` and starts a new generation.
-    fn prepare(&mut self, bounds: TileBounds) {
+    ///
+    /// Returns `false`, leaving the buffers alone, if `bounds` cover too many
+    /// tiles to keep a node for each.
+    fn prepare(&mut self, bounds: TileBounds) -> bool {
+        let area = match usize::try_from(bounds.len()) {
+            Ok(area) if area <= Grid::<()>::MAX_TILES => area,
+            _ => return false,
+        };
+
         self.open.clear();
+        // Zero is what a never-written node carries, so a generation that has
+        // wrapped round to it would make every stale node look current. That
+        // takes 2^32 searches — days, not years, for a crowd repathing every
+        // tick — and the buffer is wiped when it happens.
+        let wrapped = self.generation == u32::MAX;
         self.generation = self.generation.wrapping_add(1);
 
-        let area = usize::try_from(bounds.len()).unwrap_or(usize::MAX);
-        if self.bounds != Some(bounds) || self.nodes.len() != area {
+        if wrapped || self.bounds != Some(bounds) || self.nodes.len() != area {
             self.bounds = Some(bounds);
             self.nodes.clear();
             self.nodes.resize(area, Node::default());
             // A fresh buffer is all generation zero, so start above it.
             self.generation = 1;
         }
+        true
     }
 
     fn index(&self, tile: TilePos) -> usize {
@@ -465,6 +485,58 @@ mod tests {
         assert_eq!(path.len(), 5);
         assert_eq!(path.cost(), 4);
         assert_eq!(path.steps().len(), 4);
+    }
+
+    #[test]
+    fn a_wrapped_generation_does_not_resurrect_an_old_search() {
+        // Nodes are stamped with the search that wrote them instead of being
+        // cleared. After 2^32 searches the stamp comes round again, and without
+        // a reset the costs of a search from long ago read as current.
+        let map = open_map(5, 1);
+        let (west, east) = (TilePos::ORIGIN, TilePos::new(4, 0));
+        let mut finder = PathFinder::new();
+
+        let first = finder.find(&walkable(&map, |open| *open), east, west);
+        assert_eq!(first.map(|path| path.cost()), Some(4));
+
+        // Stand in for the searches that bring the counter to its limit. The
+        // next one wraps it, and touches no node: it starts where it ends.
+        finder.generation = u32::MAX;
+        let nowhere = finder.find(&walkable(&map, |open| *open), west, west);
+        assert_eq!(nowhere.map(|path| path.cost()), Some(0));
+        assert_ne!(finder.generation, 0, "zero marks a node as never written");
+
+        // The stamp the first search used comes round again here. Its nodes
+        // hold costs measured from the east; read as current, they are cheaper
+        // than the truth half way along and the search gives up.
+        let back = finder.find(&walkable(&map, |open| *open), west, east);
+        assert_eq!(back.map(|path| path.cost()), Some(4));
+    }
+
+    #[test]
+    fn a_map_too_large_to_search_has_no_path() {
+        struct Boundless;
+
+        impl Traversable for Boundless {
+            fn bounds(&self) -> TileBounds {
+                TileBounds::new(
+                    TilePos::new(i32::MIN, i32::MIN),
+                    TilePos::new(i32::MAX, i32::MAX),
+                )
+            }
+
+            fn step_cost(&self, _from: TilePos, _to: TilePos) -> Option<NonZeroU32> {
+                Some(NonZeroU32::MIN)
+            }
+        }
+
+        // One node per tile would be 2^64 of them. Refusing is the only answer
+        // that does not abort the process inside the allocator.
+        let mut finder = PathFinder::new();
+        assert_eq!(
+            finder.find(&Boundless, TilePos::ORIGIN, TilePos::new(3, 3)),
+            None
+        );
     }
 
     #[test]
