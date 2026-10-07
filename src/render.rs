@@ -398,7 +398,7 @@ mod tests {
         let grid = Grid::filled(4, 4, ()).unwrap();
         let mut canvas = Recorder::new();
         draw_tiles(&mut canvas, &camera(640.0, 480.0), &grid, |_, ()| None);
-        assert!(canvas.filled_tiles().is_empty());
+        assert_eq!(canvas.filled_tiles().len(), 0);
     }
 
     #[test]
@@ -462,6 +462,6 @@ mod tests {
         assert!(matches!(canvas.commands()[2], Command::Text(ref text, ..) if text == "hello"));
 
         canvas.clear_commands();
-        assert!(canvas.commands().is_empty());
+        assert_eq!(canvas.commands().len(), 0);
     }
 }
