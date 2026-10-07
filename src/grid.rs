@@ -426,192 +426,6 @@ impl<'a, T> IntoIterator for &'a Grid<T> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn rejects_grids_with_no_tiles() {
-        assert!(Grid::filled(0, 4, ()).is_err());
-        assert!(Grid::filled(4, 0, ()).is_err());
-    }
-
-    #[test]
-    fn rejects_grids_too_large_to_address() {
-        assert!(Grid::filled(u32::MAX, u32::MAX, ()).is_err());
-        // Zero-sized tiles allocate nothing, so this only exercises the cap.
-        assert!(Grid::filled(1 << 13, 1 << 13, ()).is_ok());
-        assert!(Grid::filled(1 << 13, (1 << 13) + 1, ()).is_err());
-    }
-
-    #[test]
-    fn negative_positions_are_never_inside() {
-        let grid = Grid::filled(4, 4, ()).unwrap();
-        assert!(!grid.contains(TilePos::new(-1, 0)));
-        assert!(!grid.contains(TilePos::new(0, -1)));
-        assert_eq!(grid.get(TilePos::new(-1, -1)), None);
-    }
-
-    #[test]
-    fn from_fn_visits_every_position_once() {
-        let grid = Grid::from_fn(3, 5, |tile| tile).unwrap();
-        for pos in grid.positions() {
-            assert_eq!(grid[pos], pos);
-        }
-        assert_eq!(grid.len(), 15);
-    }
-
-    #[test]
-    fn draw_order_never_moves_backwards() {
-        let grid = Grid::filled(5, 7, ()).unwrap();
-        let mut previous = i32::MIN;
-        let mut seen = Vec::new();
-        for tile in grid.draw_order() {
-            assert!(
-                tile.x + tile.y >= previous,
-                "{tile:?} came after a deeper tile"
-            );
-            previous = tile.x + tile.y;
-            seen.push(tile);
-        }
-        assert_eq!(seen.len(), grid.len());
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(seen.len(), grid.len(), "draw order repeated a tile");
-    }
-
-    #[test]
-    fn draw_order_handles_a_single_tile() {
-        let grid = Grid::filled(1, 1, ()).unwrap();
-        assert_eq!(grid.draw_order().collect::<Vec<_>>(), vec![TilePos::ORIGIN]);
-    }
-
-    #[test]
-    fn corner_tiles_have_two_neighbours() {
-        let grid = Grid::filled(3, 3, ()).unwrap();
-        assert_eq!(grid.neighbours(TilePos::ORIGIN).count(), 2);
-        assert_eq!(grid.neighbours(TilePos::new(2, 2)).count(), 2);
-        assert_eq!(grid.neighbours(TilePos::new(1, 0)).count(), 3);
-        assert_eq!(grid.neighbours(TilePos::new(1, 1)).count(), 4);
-    }
-
-    #[test]
-    fn replace_returns_the_previous_tile() {
-        let mut grid = Grid::filled(2, 2, 1u8).unwrap();
-        assert_eq!(grid.replace(TilePos::ORIGIN, 5), Some(1));
-        assert_eq!(grid[TilePos::ORIGIN], 5);
-        assert_eq!(grid.replace(TilePos::new(9, 9), 5), None);
-    }
-
-    #[test]
-    fn iter_mut_reports_the_same_positions_as_iter() {
-        let mut grid = Grid::filled(4, 3, 0u8).unwrap();
-        let expected: Vec<_> = grid.positions().collect();
-        let actual: Vec<_> = grid.iter_mut().map(|(pos, _)| pos).collect();
-        assert_eq!(actual, expected);
-    }
-
-    #[test]
-    fn bounds_normalise_their_corners() {
-        let bounds = TileBounds::new(TilePos::new(5, -1), TilePos::new(-2, 4));
-        assert_eq!(bounds.min(), TilePos::new(-2, -1));
-        assert_eq!(bounds.max(), TilePos::new(5, 4));
-        assert_eq!(bounds.width(), 8);
-        assert_eq!(bounds.height(), 6);
-        assert_eq!(bounds.len(), 48);
-    }
-
-    #[test]
-    fn bounds_that_only_touch_at_a_corner_still_intersect() {
-        let left = TileBounds::new(TilePos::ORIGIN, TilePos::new(2, 2));
-        let right = TileBounds::new(TilePos::new(2, 2), TilePos::new(4, 4));
-        let shared = left.intersection(right).expect("they share one tile");
-        assert_eq!(shared.len(), 1);
-        assert_eq!(shared.min(), TilePos::new(2, 2));
-    }
-
-    #[test]
-    fn disjoint_bounds_do_not_intersect() {
-        let left = TileBounds::new(TilePos::ORIGIN, TilePos::new(1, 1));
-        let right = TileBounds::new(TilePos::new(3, 3), TilePos::new(4, 4));
-        assert_eq!(left.intersection(right), None);
-    }
-
-    #[test]
-    fn expanding_bounds_saturates_at_the_edge_of_the_grid() {
-        let bounds = TileBounds::new(
-            TilePos::new(i32::MAX, i32::MIN),
-            TilePos::new(i32::MAX, i32::MIN),
-        );
-        let grown = bounds.expanded(4);
-        assert_eq!(grown.max().x, i32::MAX);
-        assert_eq!(grown.min().y, i32::MIN);
-    }
-
-    #[test]
-    fn bounds_at_the_edge_of_i32_do_not_overflow() {
-        // `x + y` does not fit in an `i32` out here, and a camera pointed far
-        // enough away produces exactly these bounds.
-        let far = TilePos::new(i32::MAX, i32::MAX);
-        let corner = TileBounds::new(far.offset(-1, -1), far);
-        let order: Vec<_> = corner.draw_order().collect();
-        assert_eq!(order.len(), 4);
-        assert_eq!(order.first(), Some(&far.offset(-1, -1)));
-        assert_eq!(order.last(), Some(&far));
-
-        let near = TilePos::new(i32::MIN, i32::MIN);
-        assert_eq!(
-            TileBounds::new(near, near.offset(1, 1))
-                .draw_order()
-                .count(),
-            4
-        );
-    }
-
-    #[test]
-    fn bounds_spanning_all_of_i32_report_a_saturated_size() {
-        let everything = TileBounds::new(
-            TilePos::new(i32::MIN, i32::MIN),
-            TilePos::new(i32::MAX, i32::MAX),
-        );
-        assert_eq!(everything.width(), u32::MAX);
-        assert_eq!(everything.height(), u32::MAX);
-        assert_eq!(everything.len(), u64::MAX);
-    }
-
-    #[test]
-    fn bounds_draw_order_covers_the_region_once_back_to_front() {
-        let bounds = TileBounds::new(TilePos::new(-2, 3), TilePos::new(1, 6));
-        let mut seen = Vec::new();
-        let mut previous = i32::MIN;
-        for tile in bounds.draw_order() {
-            assert!(bounds.contains(tile));
-            assert!(tile.x + tile.y >= previous);
-            previous = tile.x + tile.y;
-            seen.push(tile);
-        }
-        assert_eq!(u64::try_from(seen.len()).unwrap(), bounds.len());
-        seen.sort_unstable();
-        seen.dedup();
-        assert_eq!(u64::try_from(seen.len()).unwrap(), bounds.len());
-    }
-
-    #[test]
-    fn culling_drops_tiles_outside_the_grid() {
-        let grid = Grid::filled(4, 4, ()).unwrap();
-        let off_map = TileBounds::new(TilePos::new(-9, -9), TilePos::new(-5, -5));
-        assert_eq!(grid.draw_order_within(off_map).count(), 0);
-        assert_eq!(grid.draw_order_within(grid.bounds()).count(), grid.len());
-    }
-
-    #[test]
-    #[should_panic(expected = "outside a 2x2 grid")]
-    fn indexing_out_of_bounds_panics() {
-        let grid = Grid::filled(2, 2, 0u8).unwrap();
-        let _unreachable = grid[TilePos::new(5, 5)];
-    }
-}
-
 /// An inclusive rectangular region of tiles.
 ///
 /// Used to describe the part of a grid something cares about — most often the
@@ -817,5 +631,191 @@ impl<T> Grid<T> {
             .intersection(bounds)
             .into_iter()
             .flat_map(TileBounds::draw_order)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_grids_with_no_tiles() {
+        assert!(Grid::filled(0, 4, ()).is_err());
+        assert!(Grid::filled(4, 0, ()).is_err());
+    }
+
+    #[test]
+    fn rejects_grids_too_large_to_address() {
+        assert!(Grid::filled(u32::MAX, u32::MAX, ()).is_err());
+        // Zero-sized tiles allocate nothing, so this only exercises the cap.
+        assert!(Grid::filled(1 << 13, 1 << 13, ()).is_ok());
+        assert!(Grid::filled(1 << 13, (1 << 13) + 1, ()).is_err());
+    }
+
+    #[test]
+    fn negative_positions_are_never_inside() {
+        let grid = Grid::filled(4, 4, ()).unwrap();
+        assert!(!grid.contains(TilePos::new(-1, 0)));
+        assert!(!grid.contains(TilePos::new(0, -1)));
+        assert_eq!(grid.get(TilePos::new(-1, -1)), None);
+    }
+
+    #[test]
+    fn from_fn_visits_every_position_once() {
+        let grid = Grid::from_fn(3, 5, |tile| tile).unwrap();
+        for pos in grid.positions() {
+            assert_eq!(grid[pos], pos);
+        }
+        assert_eq!(grid.len(), 15);
+    }
+
+    #[test]
+    fn draw_order_never_moves_backwards() {
+        let grid = Grid::filled(5, 7, ()).unwrap();
+        let mut previous = i32::MIN;
+        let mut seen = Vec::new();
+        for tile in grid.draw_order() {
+            assert!(
+                tile.x + tile.y >= previous,
+                "{tile:?} came after a deeper tile"
+            );
+            previous = tile.x + tile.y;
+            seen.push(tile);
+        }
+        assert_eq!(seen.len(), grid.len());
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(seen.len(), grid.len(), "draw order repeated a tile");
+    }
+
+    #[test]
+    fn draw_order_handles_a_single_tile() {
+        let grid = Grid::filled(1, 1, ()).unwrap();
+        assert_eq!(grid.draw_order().collect::<Vec<_>>(), vec![TilePos::ORIGIN]);
+    }
+
+    #[test]
+    fn corner_tiles_have_two_neighbours() {
+        let grid = Grid::filled(3, 3, ()).unwrap();
+        assert_eq!(grid.neighbours(TilePos::ORIGIN).count(), 2);
+        assert_eq!(grid.neighbours(TilePos::new(2, 2)).count(), 2);
+        assert_eq!(grid.neighbours(TilePos::new(1, 0)).count(), 3);
+        assert_eq!(grid.neighbours(TilePos::new(1, 1)).count(), 4);
+    }
+
+    #[test]
+    fn replace_returns_the_previous_tile() {
+        let mut grid = Grid::filled(2, 2, 1u8).unwrap();
+        assert_eq!(grid.replace(TilePos::ORIGIN, 5), Some(1));
+        assert_eq!(grid[TilePos::ORIGIN], 5);
+        assert_eq!(grid.replace(TilePos::new(9, 9), 5), None);
+    }
+
+    #[test]
+    fn iter_mut_reports_the_same_positions_as_iter() {
+        let mut grid = Grid::filled(4, 3, 0u8).unwrap();
+        let expected: Vec<_> = grid.positions().collect();
+        let actual: Vec<_> = grid.iter_mut().map(|(pos, _)| pos).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn bounds_normalise_their_corners() {
+        let bounds = TileBounds::new(TilePos::new(5, -1), TilePos::new(-2, 4));
+        assert_eq!(bounds.min(), TilePos::new(-2, -1));
+        assert_eq!(bounds.max(), TilePos::new(5, 4));
+        assert_eq!(bounds.width(), 8);
+        assert_eq!(bounds.height(), 6);
+        assert_eq!(bounds.len(), 48);
+    }
+
+    #[test]
+    fn bounds_that_only_touch_at_a_corner_still_intersect() {
+        let left = TileBounds::new(TilePos::ORIGIN, TilePos::new(2, 2));
+        let right = TileBounds::new(TilePos::new(2, 2), TilePos::new(4, 4));
+        let shared = left.intersection(right).expect("they share one tile");
+        assert_eq!(shared.len(), 1);
+        assert_eq!(shared.min(), TilePos::new(2, 2));
+    }
+
+    #[test]
+    fn disjoint_bounds_do_not_intersect() {
+        let left = TileBounds::new(TilePos::ORIGIN, TilePos::new(1, 1));
+        let right = TileBounds::new(TilePos::new(3, 3), TilePos::new(4, 4));
+        assert_eq!(left.intersection(right), None);
+    }
+
+    #[test]
+    fn expanding_bounds_saturates_at_the_edge_of_the_grid() {
+        let bounds = TileBounds::new(
+            TilePos::new(i32::MAX, i32::MIN),
+            TilePos::new(i32::MAX, i32::MIN),
+        );
+        let grown = bounds.expanded(4);
+        assert_eq!(grown.max().x, i32::MAX);
+        assert_eq!(grown.min().y, i32::MIN);
+    }
+
+    #[test]
+    fn bounds_at_the_edge_of_i32_do_not_overflow() {
+        // `x + y` does not fit in an `i32` out here, and a camera pointed far
+        // enough away produces exactly these bounds.
+        let far = TilePos::new(i32::MAX, i32::MAX);
+        let corner = TileBounds::new(far.offset(-1, -1), far);
+        let order: Vec<_> = corner.draw_order().collect();
+        assert_eq!(order.len(), 4);
+        assert_eq!(order.first(), Some(&far.offset(-1, -1)));
+        assert_eq!(order.last(), Some(&far));
+
+        let near = TilePos::new(i32::MIN, i32::MIN);
+        assert_eq!(
+            TileBounds::new(near, near.offset(1, 1))
+                .draw_order()
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn bounds_spanning_all_of_i32_report_a_saturated_size() {
+        let everything = TileBounds::new(
+            TilePos::new(i32::MIN, i32::MIN),
+            TilePos::new(i32::MAX, i32::MAX),
+        );
+        assert_eq!(everything.width(), u32::MAX);
+        assert_eq!(everything.height(), u32::MAX);
+        assert_eq!(everything.len(), u64::MAX);
+    }
+
+    #[test]
+    fn bounds_draw_order_covers_the_region_once_back_to_front() {
+        let bounds = TileBounds::new(TilePos::new(-2, 3), TilePos::new(1, 6));
+        let mut seen = Vec::new();
+        let mut previous = i32::MIN;
+        for tile in bounds.draw_order() {
+            assert!(bounds.contains(tile));
+            assert!(tile.x + tile.y >= previous);
+            previous = tile.x + tile.y;
+            seen.push(tile);
+        }
+        assert_eq!(u64::try_from(seen.len()).unwrap(), bounds.len());
+        seen.sort_unstable();
+        seen.dedup();
+        assert_eq!(u64::try_from(seen.len()).unwrap(), bounds.len());
+    }
+
+    #[test]
+    fn culling_drops_tiles_outside_the_grid() {
+        let grid = Grid::filled(4, 4, ()).unwrap();
+        let off_map = TileBounds::new(TilePos::new(-9, -9), TilePos::new(-5, -5));
+        assert_eq!(grid.draw_order_within(off_map).count(), 0);
+        assert_eq!(grid.draw_order_within(grid.bounds()).count(), grid.len());
+    }
+
+    #[test]
+    #[should_panic(expected = "outside a 2x2 grid")]
+    fn indexing_out_of_bounds_panics() {
+        let grid = Grid::filled(2, 2, 0u8).unwrap();
+        let _unreachable = grid[TilePos::new(5, 5)];
     }
 }
