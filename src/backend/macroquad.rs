@@ -152,6 +152,16 @@ fn read_input(input: &mut Input) {
         (Key::Right, mq::KeyCode::Right),
         (Key::Plus, mq::KeyCode::Equal),
         (Key::Minus, mq::KeyCode::Minus),
+        (Key::Digit(0), mq::KeyCode::Key0),
+        (Key::Digit(1), mq::KeyCode::Key1),
+        (Key::Digit(2), mq::KeyCode::Key2),
+        (Key::Digit(3), mq::KeyCode::Key3),
+        (Key::Digit(4), mq::KeyCode::Key4),
+        (Key::Digit(5), mq::KeyCode::Key5),
+        (Key::Digit(6), mq::KeyCode::Key6),
+        (Key::Digit(7), mq::KeyCode::Key7),
+        (Key::Digit(8), mq::KeyCode::Key8),
+        (Key::Digit(9), mq::KeyCode::Key9),
     ] {
         if mq::is_key_pressed(mq_key) {
             input.press_key(key);
