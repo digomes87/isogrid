@@ -2,8 +2,6 @@
 
 [![CI](https://github.com/digomes87/isogrid/actions/workflows/ci.yml/badge.svg)](https://github.com/digomes87/isogrid/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/digomes87/isogrid/branch/main/graph/badge.svg)](https://codecov.io/gh/digomes87/isogrid)
-[![crates.io](https://img.shields.io/crates/v/isogrid.svg)](https://crates.io/crates/isogrid)
-[![docs.rs](https://img.shields.io/docsrs/isogrid)](https://docs.rs/isogrid)
 [![MSRV](https://img.shields.io/badge/MSRV-1.85.0-blue)](https://blog.rust-lang.org/)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
 
@@ -24,9 +22,12 @@ Early and honest about it. The public API will move before `1.0`.
 
 ## Quickstart
 
+Not on crates.io yet — the first release is waiting on a registry token. Until
+then, depend on the repository:
+
 ```toml
 [dependencies]
-isogrid = "0.1"
+isogrid = { git = "https://github.com/digomes87/isogrid", branch = "main" }
 ```
 
 ## What is in the box
@@ -77,7 +78,7 @@ see [ADR 0004](docs/adr/0004-macroquad-first.md).
 
 ## Documentation
 
-- API reference: [docs.rs/isogrid](https://docs.rs/isogrid)
+- API reference: `just doc-open` (docs.rs once the first release is out)
 - Design overview: [`ARCHITECTURE.md`](ARCHITECTURE.md)
 - Decision records: [`docs/adr/`](docs/adr/)
 
