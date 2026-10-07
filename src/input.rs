@@ -136,28 +136,80 @@ struct PointerState {
 }
 
 impl Input {
-    /// Starts a new frame at `pointer`.
+    /// Starts a new frame at `pointer`, forgetting the previous one.
     ///
-    /// Clears the one-frame state — presses and scroll — keeps what is still
-    /// held, and works out how far the pointer moved.
+    /// Clears the edge state — presses, scroll and pointer movement — keeps
+    /// what is still held, and works out how far the pointer moved.
     ///
-    /// A backend calls this once per frame, before reporting anything else.
+    /// This is the right call when every frame is also a simulation step, and
+    /// when building an [`Input`] by hand in a test. A backend driving a
+    /// fixed-timestep loop must use [`Input::move_pointer`] and
+    /// [`Input::end_tick`] instead: frames and ticks do not line up, and
+    /// clearing once per frame loses whatever was pressed in a frame that ran
+    /// no tick.
     pub fn begin_frame(&mut self, pointer: ScreenPoint) {
+        self.end_tick();
+        self.move_pointer(pointer);
+    }
+
+    /// Reports where the pointer is now, adding the movement to
+    /// [`Input::pointer_delta`].
+    ///
+    /// Unlike [`Input::begin_frame`] this clears nothing, so presses, scroll
+    /// and movement keep adding up until a tick reads them and
+    /// [`Input::end_tick`] is called.
+    ///
+    /// ```
+    /// # use isogrid::input::Input;
+    /// # use isogrid::iso::ScreenPoint;
+    /// let mut input = Input::default();
+    /// input.move_pointer(ScreenPoint::new(10.0, 0.0));
+    /// input.move_pointer(ScreenPoint::new(25.0, 5.0));
+    /// assert_eq!(input.pointer_delta(), ScreenPoint::new(25.0, 5.0));
+    /// ```
+    pub fn move_pointer(&mut self, pointer: ScreenPoint) {
         #[allow(clippy::cast_possible_truncation)]
         let (x, y) = (pointer.x as i32, pointer.y as i32);
 
         self.pointer = PointerState {
             x,
             y,
-            dx: x - self.pointer.x,
-            dy: y - self.pointer.y,
+            dx: self
+                .pointer
+                .dx
+                .saturating_add(x.saturating_sub(self.pointer.x)),
+            dy: self
+                .pointer
+                .dy
+                .saturating_add(y.saturating_sub(self.pointer.y)),
         };
+    }
+
+    /// Marks the edge state as consumed: presses, scroll and pointer movement
+    /// are cleared, and whatever is held stays held.
+    ///
+    /// Call it after each simulation tick. A press is then seen by exactly one
+    /// tick — the first to run after it happened — however many frames or
+    /// ticks went by in between. [`backend::step`](crate::backend::step) does
+    /// this for you.
+    ///
+    /// ```
+    /// # use isogrid::input::{Input, Key};
+    /// let mut input = Input::default();
+    /// input.press_key(Key::Space);
+    /// input.end_tick();
+    /// assert!(!input.key_pressed(Key::Space));
+    /// assert!(input.key_down(Key::Space));
+    /// ```
+    pub fn end_tick(&mut self) {
+        self.pointer.dx = 0;
+        self.pointer.dy = 0;
         self.buttons_pressed = [false; 3];
         self.keys_pressed.clear();
         self.scroll = 0;
     }
 
-    /// Reports that a button went down this frame.
+    /// Reports that a button went down.
     pub fn press_button(&mut self, button: Button) {
         self.buttons_down[button.index()] = true;
         self.buttons_pressed[button.index()] = true;
@@ -168,7 +220,7 @@ impl Input {
         self.buttons_down[button.index()] = false;
     }
 
-    /// Reports that a key went down this frame.
+    /// Reports that a key went down.
     pub fn press_key(&mut self, key: Key) {
         self.keys_down.insert(key);
         self.keys_pressed.insert(key);
@@ -181,7 +233,7 @@ impl Input {
 
     /// Reports wheel movement, positive away from the user.
     pub fn scroll_by(&mut self, amount: i32) {
-        self.scroll += amount;
+        self.scroll = self.scroll.saturating_add(amount);
     }
 
     /// Where the pointer is.
@@ -190,7 +242,7 @@ impl Input {
         ScreenPoint::new(self.pointer.x as f32, self.pointer.y as f32)
     }
 
-    /// How far the pointer moved since the previous frame.
+    /// How far the pointer moved since the edge state was last cleared.
     pub fn pointer_delta(&self) -> ScreenPoint {
         #[allow(clippy::cast_precision_loss)]
         ScreenPoint::new(self.pointer.dx as f32, self.pointer.dy as f32)
@@ -201,7 +253,7 @@ impl Input {
         self.buttons_down[button.index()]
     }
 
-    /// Whether a button went down during this frame.
+    /// Whether a button went down since the edge state was last cleared.
     pub fn button_pressed(&self, button: Button) -> bool {
         self.buttons_pressed[button.index()]
     }
@@ -211,12 +263,13 @@ impl Input {
         self.keys_down.contains(&key)
     }
 
-    /// Whether a key went down during this frame.
+    /// Whether a key went down since the edge state was last cleared.
     pub fn key_pressed(&self, key: Key) -> bool {
         self.keys_pressed.contains(&key)
     }
 
-    /// Wheel movement this frame, positive away from the user.
+    /// Wheel movement since the edge state was last cleared, positive away
+    /// from the user.
     pub fn scroll(&self) -> i32 {
         self.scroll
     }

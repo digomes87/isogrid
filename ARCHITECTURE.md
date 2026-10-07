@@ -25,15 +25,20 @@ which asks the game what a step costs rather than deciding for itself.
 iso     projection: grid space <-> screen space, draw-order depth
  └─ grid    rectangular tile storage, iteration orders, regions, culling
      └─ camera   pan, zoom, viewport, "what can I see"
+         └─ render   the Renderer trait, tile painting, a recording test double
  path    A* over anything that answers "what does this step cost"
  time    fixed-timestep clock: real time in, whole ticks out
  rng     seeded, reproducible random numbers
+ input   pointer and keyboard state, with no windowing library in it
+ backend the frame step every backend shares, and macroquad behind a feature
  error   the one error type
 ```
 
 `iso` is the foundation and depends on nothing. `grid` builds on it, `camera`
-builds on both. `time`, `rng` and `path` are independent of the rendering side
-entirely — a headless simulation uses them and never touches a pixel.
+builds on both, and `render` turns what the camera sees into draw calls. `time`,
+`rng` and `path` are independent of the rendering side entirely — a headless
+simulation uses them and never touches a pixel. `backend` is the only module
+that may name a graphics library, and only behind a feature flag.
 
 ## The two clocks
 
@@ -51,9 +56,11 @@ A frame therefore looks like this:
 ```text
 loop {
     let frame = time_since_last_frame();
+    report_input(&mut input);            // adds to what is already there
 
     for tick in clock.advance(frame) {   // zero, one, or several
-        world.update(tick);              // fixed step, deterministic
+        world.update(tick, &input);      // fixed step, deterministic
+        input.end_tick();                // presses are consumed, holds are not
     }
 
     render(&world, clock.alpha());       // alpha blends between the last two ticks
@@ -63,6 +70,20 @@ loop {
 `alpha` is what keeps motion smooth: it is how far the renderer is between the
 last tick and the next, so a guest walking at one tile per tick is drawn part of
 the way along, even at 144 frames per second on a 40 Hz simulation.
+
+### Input belongs to ticks, not frames
+
+The loop above runs "zero, one, or several" ticks per frame, and input has to
+survive all three cases. A key press is an *edge* — it should be acted on once.
+Clear edges once per frame and they break in both directions: a press reported
+in a frame that owes no tick is gone before any tick looks, and a press reported
+in a frame that owes two is acted on twice. At 60 frames a second on a 40 Hz
+simulation the first case is one frame in three.
+
+So edges are cleared per tick. [`Input`](src/input.rs) accumulates presses,
+scroll and pointer movement until [`Input::end_tick`](src/input.rs) is called,
+and [`backend::step`](src/backend/mod.rs) is that inner loop, written once and
+tested without a window so that no backend has to get it right again.
 
 ## Determinism
 
@@ -88,16 +109,24 @@ fails loudly rather than silently invalidating every save file.
 
 ## Rendering
 
-Nothing in the engine draws anything yet. When a backend lands it goes behind a
-trait, and the current plan is `macroquad` first with the boundary kept clean
-enough to move to `wgpu` later — the simulation must not be able to tell the
-difference.
+The engine describes what to draw; it does not draw. Everything that can be
+decided without a graphics library is decided before one is involved:
 
-Culling and ordering already live on the simulation side, because they are
-geometry rather than graphics: [`Camera::visible_tiles`](src/camera.rs) names
-the region on screen, [`Grid::draw_order_within`](src/grid.rs) clips it to the
-map and yields the tiles back to front. A renderer's job is then only to draw
-what it is handed, in the order it is handed it.
+1. [`Camera::visible_tiles`](src/camera.rs) names the region on screen.
+2. [`Grid::draw_order_within`](src/grid.rs) clips it to the map and yields the
+   tiles back to front.
+3. [`render::draw_tiles`](src/render.rs) projects each one and hands a rhombus
+   and a colour to a [`Renderer`](src/render.rs).
+
+`Renderer` is five methods. A backend implements them over a graphics library;
+[`Recorder`](src/render.rs) implements them by writing each call to a list, which
+is how drawing code is tested exactly, in a plain `cargo test`, with no window.
+
+`macroquad` is the first backend, behind the off-by-default `macroquad-backend`
+feature. The boundary is kept narrow enough to move to `wgpu` later without the
+simulation noticing — see [ADR 0004](docs/adr/0004-macroquad-first.md), which
+also records the two security advisories that come with macroquad and why they
+are accepted here.
 
 ## Performance notes
 
