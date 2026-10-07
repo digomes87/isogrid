@@ -140,9 +140,38 @@ where
 /// and adjacent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "PathData"))]
 pub struct Path {
     tiles: Vec<TilePos>,
     cost: u32,
+}
+
+/// A [`Path`] as it is stored.
+///
+/// Only emptiness is checked. Whether the tiles are adjacent, and whether the
+/// cost is right, depends on a map the path does not carry — a stored path is
+/// a record of a past search, to be followed or discarded, not re-verified.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Path")]
+struct PathData {
+    tiles: Vec<TilePos>,
+    cost: u32,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<PathData> for Path {
+    type Error = crate::Error;
+
+    fn try_from(data: PathData) -> Result<Self, Self::Error> {
+        if data.tiles.is_empty() {
+            return Err(crate::Error::EmptyPath);
+        }
+        Ok(Self {
+            tiles: data.tiles,
+            cost: data.cost,
+        })
+    }
 }
 
 impl Path {

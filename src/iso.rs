@@ -239,10 +239,30 @@ impl TilePos {
 /// is derived from these three numbers.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "TileSizeData"))]
 pub struct TileSize {
     width: f32,
     height: f32,
     elevation: f32,
+}
+
+/// A [`TileSize`] as it is stored, before [`TileSize::new`] has checked it.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "TileSize")]
+struct TileSizeData {
+    width: f32,
+    height: f32,
+    elevation: f32,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<TileSizeData> for TileSize {
+    type Error = Error;
+
+    fn try_from(data: TileSizeData) -> Result<Self> {
+        Self::new(data.width, data.height, data.elevation)
+    }
 }
 
 impl TileSize {

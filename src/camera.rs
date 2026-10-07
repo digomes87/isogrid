@@ -25,9 +25,28 @@ use crate::iso::{GridPoint, ScreenPoint, TilePos, TileSize};
 /// The pixel size of the window, or of the region being drawn into.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "ViewportData"))]
 pub struct Viewport {
     width: f32,
     height: f32,
+}
+
+/// A [`Viewport`] as it is stored, before [`Viewport::new`] has checked it.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Viewport")]
+struct ViewportData {
+    width: f32,
+    height: f32,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<ViewportData> for Viewport {
+    type Error = Error;
+
+    fn try_from(data: ViewportData) -> Result<Self> {
+        Self::new(data.width, data.height)
+    }
 }
 
 impl Viewport {
@@ -77,9 +96,28 @@ impl Viewport {
 /// The range a camera's zoom is allowed to move within.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "ZoomRangeData"))]
 pub struct ZoomRange {
     min: f32,
     max: f32,
+}
+
+/// A [`ZoomRange`] as it is stored, before [`ZoomRange::new`] has checked it.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "ZoomRange")]
+struct ZoomRangeData {
+    min: f32,
+    max: f32,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<ZoomRangeData> for ZoomRange {
+    type Error = Error;
+
+    fn try_from(data: ZoomRangeData) -> Result<Self> {
+        Self::new(data.min, data.max)
+    }
 }
 
 impl ZoomRange {
@@ -154,12 +192,52 @@ impl Default for ZoomRange {
 /// conversion a renderer should need.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "CameraData"))]
 pub struct Camera {
     tiles: TileSize,
     viewport: Viewport,
     focus: GridPoint,
     zoom: f32,
     zoom_range: ZoomRange,
+}
+
+/// A [`Camera`] as it is stored.
+///
+/// Its parts check themselves as they are read; what is left to check is that
+/// the zoom lies inside the range, which the setters guarantee by clamping.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Camera")]
+struct CameraData {
+    tiles: TileSize,
+    viewport: Viewport,
+    focus: GridPoint,
+    zoom: f32,
+    zoom_range: ZoomRange,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<CameraData> for Camera {
+    type Error = Error;
+
+    fn try_from(data: CameraData) -> Result<Self> {
+        let range = data.zoom_range;
+        // Written so that a `NaN` zoom fails the test rather than passing it.
+        if !(data.zoom >= range.min() && data.zoom <= range.max()) {
+            return Err(Error::InvalidZoom {
+                zoom: data.zoom,
+                min: range.min(),
+                max: range.max(),
+            });
+        }
+        Ok(Self {
+            tiles: data.tiles,
+            viewport: data.viewport,
+            focus: data.focus,
+            zoom: data.zoom,
+            zoom_range: range,
+        })
+    }
 }
 
 impl Camera {

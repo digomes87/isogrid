@@ -28,10 +28,48 @@ use crate::iso::TilePos;
 /// bounds checks to two unsigned comparisons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "GridData<T>"))]
 pub struct Grid<T> {
     width: u32,
     height: u32,
     tiles: Vec<T>,
+}
+
+/// A [`Grid`] as it is stored, before its tiles have been counted.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Grid")]
+struct GridData<T> {
+    width: u32,
+    height: u32,
+    tiles: Vec<T>,
+}
+
+#[cfg(feature = "serde")]
+impl<T> TryFrom<GridData<T>> for Grid<T> {
+    type Error = Error;
+
+    fn try_from(data: GridData<T>) -> Result<Self> {
+        let GridData {
+            width,
+            height,
+            tiles,
+        } = data;
+        // Indexing trusts `tiles.len() == width * height` and does no check of
+        // its own, so this is the only place a mismatch can be caught.
+        if Self::area(width, height)? != tiles.len() {
+            return Err(Error::TileCountMismatch {
+                width,
+                height,
+                tiles: tiles.len(),
+            });
+        }
+        Ok(Self {
+            width,
+            height,
+            tiles,
+        })
+    }
 }
 
 impl<T> Grid<T> {
@@ -558,9 +596,27 @@ mod tests {
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(from = "TileBoundsData"))]
 pub struct TileBounds {
     min: TilePos,
     max: TilePos,
+}
+
+/// [`TileBounds`] as they are stored, before the corners have been ordered.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "TileBounds")]
+struct TileBoundsData {
+    min: TilePos,
+    max: TilePos,
+}
+
+#[cfg(feature = "serde")]
+impl From<TileBoundsData> for TileBounds {
+    /// Orders the corners, exactly as [`TileBounds::new`] does.
+    fn from(data: TileBoundsData) -> Self {
+        Self::new(data.min, data.max)
+    }
 }
 
 impl TileBounds {

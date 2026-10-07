@@ -85,7 +85,17 @@ impl Tick {
 /// How many ticks the simulation runs per second of simulated time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "u32"))]
 pub struct TickRate(u32);
+
+#[cfg(feature = "serde")]
+impl TryFrom<u32> for TickRate {
+    type Error = Error;
+
+    fn try_from(per_second: u32) -> Result<Self> {
+        Self::new(per_second)
+    }
+}
 
 impl TickRate {
     /// Forty ticks a second, the rate the original park sims ran at.
@@ -246,6 +256,7 @@ impl ExactSizeIterator for TickRunIter {}
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "ClockData"))]
 pub struct Clock {
     rate: TickRate,
     /// Elapsed real time, scaled by the tick rate. A tick is due for every
@@ -254,6 +265,40 @@ pub struct Clock {
     accumulated: u128,
     ticks: u64,
     max_catch_up: u32,
+}
+
+/// A [`Clock`] as it is stored, before its state has been checked.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Clock")]
+struct ClockData {
+    rate: TickRate,
+    accumulated: u128,
+    ticks: u64,
+    max_catch_up: u32,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<ClockData> for Clock {
+    type Error = Error;
+
+    fn try_from(data: ClockData) -> Result<Self> {
+        // `advance` leaves less than one tick behind and `set_max_catch_up`
+        // never stores zero, so anything else did not come from a running
+        // clock. An unchecked accumulator could also overflow the next add.
+        if data.accumulated >= NANOS_PER_SECOND || data.max_catch_up == 0 {
+            return Err(Error::InvalidClock {
+                accumulated: data.accumulated,
+                max_catch_up: data.max_catch_up,
+            });
+        }
+        Ok(Self {
+            rate: data.rate,
+            accumulated: data.accumulated,
+            ticks: data.ticks,
+            max_catch_up: data.max_catch_up,
+        })
+    }
 }
 
 impl Clock {
