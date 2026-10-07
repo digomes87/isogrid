@@ -13,11 +13,17 @@ concurrency:
   group: release-plz-${{ github.ref }}
   cancel-in-progress: false
 
+# Both jobs need things only the repository owner can grant: permission for
+# Actions to open pull requests (or a RELEASE_PLZ_TOKEN), and a
+# CARGO_REGISTRY_TOKEN to publish. Until those exist the workflow is skipped
+# rather than failing on every push to main. Set the repository variable
+# RELEASE_ENABLED to "true" once they do.
 jobs:
   # Keeps a "chore: release" pull request open, holding the version bump and
   # the generated changelog entries for everything merged since the last tag.
   release-pr:
     name: Open the release PR
+    if: vars.RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -35,6 +41,7 @@ jobs:
   # publishes to crates.io.
   release:
     name: Tag and publish
+    if: vars.RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
