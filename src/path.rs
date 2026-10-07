@@ -444,7 +444,7 @@ mod tests {
         let path = find(&map, TilePos::new(2, 2), TilePos::new(2, 2)).unwrap();
         assert_eq!(path.tiles(), [TilePos::new(2, 2)]);
         assert_eq!(path.cost(), 0);
-        assert!(path.steps().is_empty());
+        assert_eq!(path.steps().len(), 0);
     }
 
     #[test]

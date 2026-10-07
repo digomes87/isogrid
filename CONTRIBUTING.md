@@ -54,6 +54,11 @@ changelog is for people reading release notes.
 
 Nothing needs to be added to `CHANGELOG.md` by hand.
 
+The release workflow is switched off until the repository has what it needs:
+Actions allowed to open pull requests (or a `RELEASE_PLZ_TOKEN` secret) and a
+`CARGO_REGISTRY_TOKEN`. Setting the repository variable `RELEASE_ENABLED` to
+`true` turns it on.
+
 ## Tests
 
 - Pure maths gets a property test (`proptest`) alongside its unit tests.
