@@ -28,10 +28,48 @@ use crate::iso::TilePos;
 /// bounds checks to two unsigned comparisons.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(try_from = "GridData<T>"))]
 pub struct Grid<T> {
     width: u32,
     height: u32,
     tiles: Vec<T>,
+}
+
+/// A [`Grid`] as it is stored, before its tiles have been counted.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "Grid")]
+struct GridData<T> {
+    width: u32,
+    height: u32,
+    tiles: Vec<T>,
+}
+
+#[cfg(feature = "serde")]
+impl<T> TryFrom<GridData<T>> for Grid<T> {
+    type Error = Error;
+
+    fn try_from(data: GridData<T>) -> Result<Self> {
+        let GridData {
+            width,
+            height,
+            tiles,
+        } = data;
+        // Indexing trusts `tiles.len() == width * height` and does no check of
+        // its own, so this is the only place a mismatch can be caught.
+        if Self::area(width, height)? != tiles.len() {
+            return Err(Error::TileCountMismatch {
+                width,
+                height,
+                tiles: tiles.len(),
+            });
+        }
+        Ok(Self {
+            width,
+            height,
+            tiles,
+        })
+    }
 }
 
 impl<T> Grid<T> {
@@ -388,6 +426,214 @@ impl<'a, T> IntoIterator for &'a Grid<T> {
     }
 }
 
+/// An inclusive rectangular region of tiles.
+///
+/// Used to describe the part of a grid something cares about — most often the
+/// part of it a camera can see.
+///
+/// ```
+/// use isogrid::grid::TileBounds;
+/// use isogrid::iso::TilePos;
+///
+/// let bounds = TileBounds::new(TilePos::new(2, 1), TilePos::new(4, 3));
+/// assert!(bounds.contains(TilePos::new(3, 2)));
+/// assert_eq!(bounds.len(), 9);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+#[cfg_attr(feature = "serde", serde(from = "TileBoundsData"))]
+pub struct TileBounds {
+    min: TilePos,
+    max: TilePos,
+}
+
+/// [`TileBounds`] as they are stored, before the corners have been ordered.
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(rename = "TileBounds")]
+struct TileBoundsData {
+    min: TilePos,
+    max: TilePos,
+}
+
+#[cfg(feature = "serde")]
+impl From<TileBoundsData> for TileBounds {
+    /// Orders the corners, exactly as [`TileBounds::new`] does.
+    fn from(data: TileBoundsData) -> Self {
+        Self::new(data.min, data.max)
+    }
+}
+
+impl TileBounds {
+    /// Builds bounds covering both corners, whichever way round they are given.
+    ///
+    /// ```
+    /// # use isogrid::grid::TileBounds;
+    /// # use isogrid::iso::TilePos;
+    /// let forwards = TileBounds::new(TilePos::new(0, 0), TilePos::new(2, 2));
+    /// let backwards = TileBounds::new(TilePos::new(2, 2), TilePos::new(0, 0));
+    /// assert_eq!(forwards, backwards);
+    /// ```
+    pub fn new(a: TilePos, b: TilePos) -> Self {
+        Self {
+            min: TilePos::new(a.x.min(b.x), a.y.min(b.y)),
+            max: TilePos::new(a.x.max(b.x), a.y.max(b.y)),
+        }
+    }
+
+    /// The corner nearest the grid origin.
+    pub const fn min(self) -> TilePos {
+        self.min
+    }
+
+    /// The corner furthest from the grid origin, inclusive.
+    pub const fn max(self) -> TilePos {
+        self.max
+    }
+
+    /// The width of the region in tiles.
+    ///
+    /// Saturates at `u32::MAX` for bounds spanning the whole of `i32`, which
+    /// are one tile wider than a `u32` can say.
+    pub const fn width(self) -> u32 {
+        self.max.x.abs_diff(self.min.x).saturating_add(1)
+    }
+
+    /// The height of the region in tiles.
+    ///
+    /// Saturates in the same way as [`TileBounds::width`].
+    pub const fn height(self) -> u32 {
+        self.max.y.abs_diff(self.min.y).saturating_add(1)
+    }
+
+    /// The number of tiles in the region.
+    ///
+    /// ```
+    /// # use isogrid::grid::TileBounds;
+    /// # use isogrid::iso::TilePos;
+    /// assert_eq!(TileBounds::new(TilePos::ORIGIN, TilePos::ORIGIN).len(), 1);
+    /// ```
+    pub const fn len(self) -> u64 {
+        let width = self.max.x.abs_diff(self.min.x) as u64 + 1;
+        let height = self.max.y.abs_diff(self.min.y) as u64 + 1;
+        // Only bounds covering all of `i32` on both axes reach 2^64 exactly.
+        width.saturating_mul(height)
+    }
+
+    /// Always `false`; bounds always contain at least the tile they started at.
+    pub const fn is_empty(self) -> bool {
+        false
+    }
+
+    /// Whether `tile` lies inside the region.
+    pub const fn contains(self, tile: TilePos) -> bool {
+        tile.x >= self.min.x && tile.x <= self.max.x && tile.y >= self.min.y && tile.y <= self.max.y
+    }
+
+    /// The region grown by `margin` tiles in every direction.
+    ///
+    /// Saturates at the edges of `i32`.
+    ///
+    /// ```
+    /// # use isogrid::grid::TileBounds;
+    /// # use isogrid::iso::TilePos;
+    /// let grown = TileBounds::new(TilePos::ORIGIN, TilePos::ORIGIN).expanded(2);
+    /// assert_eq!(grown.min(), TilePos::new(-2, -2));
+    /// assert_eq!(grown.max(), TilePos::new(2, 2));
+    /// ```
+    #[must_use]
+    pub fn expanded(self, margin: u32) -> Self {
+        let margin = i32::try_from(margin).unwrap_or(i32::MAX);
+        Self {
+            min: self.min.offset(-margin, -margin),
+            max: self.max.offset(margin, margin),
+        }
+    }
+
+    /// The tiles shared with `other`, or `None` if the regions do not overlap.
+    ///
+    /// ```
+    /// # use isogrid::grid::TileBounds;
+    /// # use isogrid::iso::TilePos;
+    /// let left = TileBounds::new(TilePos::new(0, 0), TilePos::new(4, 4));
+    /// let right = TileBounds::new(TilePos::new(3, 3), TilePos::new(9, 9));
+    /// let shared = left.intersection(right).expect("the corners overlap");
+    /// assert_eq!(shared.min(), TilePos::new(3, 3));
+    /// assert_eq!(shared.max(), TilePos::new(4, 4));
+    /// ```
+    pub fn intersection(self, other: Self) -> Option<Self> {
+        let min = TilePos::new(self.min.x.max(other.min.x), self.min.y.max(other.min.y));
+        let max = TilePos::new(self.max.x.min(other.max.x), self.max.y.min(other.max.y));
+        (min.x <= max.x && min.y <= max.y).then_some(Self { min, max })
+    }
+
+    /// Every tile in the region, back to front for the isometric camera.
+    ///
+    /// The same anti-diagonal order as [`Grid::draw_order`], over an arbitrary
+    /// region rather than a whole grid.
+    ///
+    /// ```
+    /// # use isogrid::grid::TileBounds;
+    /// # use isogrid::iso::TilePos;
+    /// let bounds = TileBounds::new(TilePos::new(1, 1), TilePos::new(2, 2));
+    /// let order: Vec<_> = bounds.draw_order().collect();
+    /// assert_eq!(order.first(), Some(&TilePos::new(1, 1)));
+    /// assert_eq!(order.last(), Some(&TilePos::new(2, 2)));
+    /// ```
+    pub fn draw_order(self) -> impl Iterator<Item = TilePos> {
+        // A diagonal is `x + y`, which needs 33 bits at the corners of `i32`.
+        // Everything derived from it is clamped back into the bounds, so the
+        // narrowing casts below cannot lose anything.
+        let (min_x, min_y) = (i64::from(self.min.x), i64::from(self.min.y));
+        let (max_x, max_y) = (i64::from(self.max.x), i64::from(self.max.y));
+        (min_x + min_y..=max_x + max_y).flat_map(move |diagonal| {
+            let first_x = min_x.max(diagonal - max_y);
+            let last_x = max_x.min(diagonal - min_y);
+            #[allow(clippy::cast_possible_truncation)]
+            (first_x..=last_x).map(move |x| TilePos::new(x as i32, (diagonal - x) as i32))
+        })
+    }
+}
+
+impl<T> Grid<T> {
+    /// The bounds covering the whole grid.
+    ///
+    /// ```
+    /// # use isogrid::grid::Grid;
+    /// # use isogrid::iso::TilePos;
+    /// let grid = Grid::filled(4, 3, ())?;
+    /// assert_eq!(grid.bounds().max(), TilePos::new(3, 2));
+    /// # Ok::<(), isogrid::Error>(())
+    /// ```
+    #[allow(clippy::cast_possible_wrap)] // Dimensions are capped well below `i32::MAX`.
+    pub const fn bounds(&self) -> TileBounds {
+        TileBounds {
+            min: TilePos::ORIGIN,
+            max: TilePos::new(self.width as i32 - 1, self.height as i32 - 1),
+        }
+    }
+
+    /// The tiles of `bounds` that are actually inside the grid, back to front.
+    ///
+    /// This is the culling call: hand it what the camera can see and it yields
+    /// only the tiles that exist, in draw order.
+    ///
+    /// ```
+    /// # use isogrid::grid::{Grid, TileBounds};
+    /// # use isogrid::iso::TilePos;
+    /// let grid = Grid::filled(4, 4, ())?;
+    /// let visible = TileBounds::new(TilePos::new(-5, -5), TilePos::new(1, 1));
+    /// assert_eq!(grid.draw_order_within(visible).count(), 4);
+    /// # Ok::<(), isogrid::Error>(())
+    /// ```
+    pub fn draw_order_within(&self, bounds: TileBounds) -> impl Iterator<Item = TilePos> {
+        self.bounds()
+            .intersection(bounds)
+            .into_iter()
+            .flat_map(TileBounds::draw_order)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,6 +757,37 @@ mod tests {
     }
 
     #[test]
+    fn bounds_at_the_edge_of_i32_do_not_overflow() {
+        // `x + y` does not fit in an `i32` out here, and a camera pointed far
+        // enough away produces exactly these bounds.
+        let far = TilePos::new(i32::MAX, i32::MAX);
+        let corner = TileBounds::new(far.offset(-1, -1), far);
+        let order: Vec<_> = corner.draw_order().collect();
+        assert_eq!(order.len(), 4);
+        assert_eq!(order.first(), Some(&far.offset(-1, -1)));
+        assert_eq!(order.last(), Some(&far));
+
+        let near = TilePos::new(i32::MIN, i32::MIN);
+        assert_eq!(
+            TileBounds::new(near, near.offset(1, 1))
+                .draw_order()
+                .count(),
+            4
+        );
+    }
+
+    #[test]
+    fn bounds_spanning_all_of_i32_report_a_saturated_size() {
+        let everything = TileBounds::new(
+            TilePos::new(i32::MIN, i32::MIN),
+            TilePos::new(i32::MAX, i32::MAX),
+        );
+        assert_eq!(everything.width(), u32::MAX);
+        assert_eq!(everything.height(), u32::MAX);
+        assert_eq!(everything.len(), u64::MAX);
+    }
+
+    #[test]
     fn bounds_draw_order_covers_the_region_once_back_to_front() {
         let bounds = TileBounds::new(TilePos::new(-2, 3), TilePos::new(1, 6));
         let mut seen = Vec::new();
@@ -540,184 +817,5 @@ mod tests {
     fn indexing_out_of_bounds_panics() {
         let grid = Grid::filled(2, 2, 0u8).unwrap();
         let _unreachable = grid[TilePos::new(5, 5)];
-    }
-}
-
-/// An inclusive rectangular region of tiles.
-///
-/// Used to describe the part of a grid something cares about — most often the
-/// part of it a camera can see.
-///
-/// ```
-/// use isogrid::grid::TileBounds;
-/// use isogrid::iso::TilePos;
-///
-/// let bounds = TileBounds::new(TilePos::new(2, 1), TilePos::new(4, 3));
-/// assert!(bounds.contains(TilePos::new(3, 2)));
-/// assert_eq!(bounds.len(), 9);
-/// ```
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct TileBounds {
-    min: TilePos,
-    max: TilePos,
-}
-
-impl TileBounds {
-    /// Builds bounds covering both corners, whichever way round they are given.
-    ///
-    /// ```
-    /// # use isogrid::grid::TileBounds;
-    /// # use isogrid::iso::TilePos;
-    /// let forwards = TileBounds::new(TilePos::new(0, 0), TilePos::new(2, 2));
-    /// let backwards = TileBounds::new(TilePos::new(2, 2), TilePos::new(0, 0));
-    /// assert_eq!(forwards, backwards);
-    /// ```
-    pub fn new(a: TilePos, b: TilePos) -> Self {
-        Self {
-            min: TilePos::new(a.x.min(b.x), a.y.min(b.y)),
-            max: TilePos::new(a.x.max(b.x), a.y.max(b.y)),
-        }
-    }
-
-    /// The corner nearest the grid origin.
-    pub const fn min(self) -> TilePos {
-        self.min
-    }
-
-    /// The corner furthest from the grid origin, inclusive.
-    pub const fn max(self) -> TilePos {
-        self.max
-    }
-
-    /// The width of the region in tiles.
-    pub const fn width(self) -> u32 {
-        self.max.x.abs_diff(self.min.x) + 1
-    }
-
-    /// The height of the region in tiles.
-    pub const fn height(self) -> u32 {
-        self.max.y.abs_diff(self.min.y) + 1
-    }
-
-    /// The number of tiles in the region.
-    ///
-    /// ```
-    /// # use isogrid::grid::TileBounds;
-    /// # use isogrid::iso::TilePos;
-    /// assert_eq!(TileBounds::new(TilePos::ORIGIN, TilePos::ORIGIN).len(), 1);
-    /// ```
-    pub const fn len(self) -> u64 {
-        self.width() as u64 * self.height() as u64
-    }
-
-    /// Always `false`; bounds always contain at least the tile they started at.
-    pub const fn is_empty(self) -> bool {
-        false
-    }
-
-    /// Whether `tile` lies inside the region.
-    pub const fn contains(self, tile: TilePos) -> bool {
-        tile.x >= self.min.x && tile.x <= self.max.x && tile.y >= self.min.y && tile.y <= self.max.y
-    }
-
-    /// The region grown by `margin` tiles in every direction.
-    ///
-    /// Saturates at the edges of `i32`.
-    ///
-    /// ```
-    /// # use isogrid::grid::TileBounds;
-    /// # use isogrid::iso::TilePos;
-    /// let grown = TileBounds::new(TilePos::ORIGIN, TilePos::ORIGIN).expanded(2);
-    /// assert_eq!(grown.min(), TilePos::new(-2, -2));
-    /// assert_eq!(grown.max(), TilePos::new(2, 2));
-    /// ```
-    #[must_use]
-    pub fn expanded(self, margin: u32) -> Self {
-        let margin = i32::try_from(margin).unwrap_or(i32::MAX);
-        Self {
-            min: self.min.offset(-margin, -margin),
-            max: self.max.offset(margin, margin),
-        }
-    }
-
-    /// The tiles shared with `other`, or `None` if the regions do not overlap.
-    ///
-    /// ```
-    /// # use isogrid::grid::TileBounds;
-    /// # use isogrid::iso::TilePos;
-    /// let left = TileBounds::new(TilePos::new(0, 0), TilePos::new(4, 4));
-    /// let right = TileBounds::new(TilePos::new(3, 3), TilePos::new(9, 9));
-    /// let shared = left.intersection(right).expect("the corners overlap");
-    /// assert_eq!(shared.min(), TilePos::new(3, 3));
-    /// assert_eq!(shared.max(), TilePos::new(4, 4));
-    /// ```
-    pub fn intersection(self, other: Self) -> Option<Self> {
-        let min = TilePos::new(self.min.x.max(other.min.x), self.min.y.max(other.min.y));
-        let max = TilePos::new(self.max.x.min(other.max.x), self.max.y.min(other.max.y));
-        (min.x <= max.x && min.y <= max.y).then_some(Self { min, max })
-    }
-
-    /// Every tile in the region, back to front for the isometric camera.
-    ///
-    /// The same anti-diagonal order as [`Grid::draw_order`], over an arbitrary
-    /// region rather than a whole grid.
-    ///
-    /// ```
-    /// # use isogrid::grid::TileBounds;
-    /// # use isogrid::iso::TilePos;
-    /// let bounds = TileBounds::new(TilePos::new(1, 1), TilePos::new(2, 2));
-    /// let order: Vec<_> = bounds.draw_order().collect();
-    /// assert_eq!(order.first(), Some(&TilePos::new(1, 1)));
-    /// assert_eq!(order.last(), Some(&TilePos::new(2, 2)));
-    /// ```
-    pub fn draw_order(self) -> impl Iterator<Item = TilePos> {
-        let (min, max) = (self.min, self.max);
-        let first = min.x + min.y;
-        let last = max.x + max.y;
-        (first..=last).flat_map(move |diagonal| {
-            let first_x = min.x.max(diagonal - max.y);
-            let last_x = max.x.min(diagonal - min.y);
-            (first_x..=last_x).map(move |x| TilePos::new(x, diagonal - x))
-        })
-    }
-}
-
-impl<T> Grid<T> {
-    /// The bounds covering the whole grid.
-    ///
-    /// ```
-    /// # use isogrid::grid::Grid;
-    /// # use isogrid::iso::TilePos;
-    /// let grid = Grid::filled(4, 3, ())?;
-    /// assert_eq!(grid.bounds().max(), TilePos::new(3, 2));
-    /// # Ok::<(), isogrid::Error>(())
-    /// ```
-    #[allow(clippy::cast_possible_wrap)] // Dimensions are capped well below `i32::MAX`.
-    pub const fn bounds(&self) -> TileBounds {
-        TileBounds {
-            min: TilePos::ORIGIN,
-            max: TilePos::new(self.width as i32 - 1, self.height as i32 - 1),
-        }
-    }
-
-    /// The tiles of `bounds` that are actually inside the grid, back to front.
-    ///
-    /// This is the culling call: hand it what the camera can see and it yields
-    /// only the tiles that exist, in draw order.
-    ///
-    /// ```
-    /// # use isogrid::grid::{Grid, TileBounds};
-    /// # use isogrid::iso::TilePos;
-    /// let grid = Grid::filled(4, 4, ())?;
-    /// let visible = TileBounds::new(TilePos::new(-5, -5), TilePos::new(1, 1));
-    /// assert_eq!(grid.draw_order_within(visible).count(), 4);
-    /// # Ok::<(), isogrid::Error>(())
-    /// ```
-    pub fn draw_order_within(&self, bounds: TileBounds) -> impl Iterator<Item = TilePos> {
-        self.bounds()
-            .intersection(bounds)
-            .into_iter()
-            .flat_map(TileBounds::draw_order)
     }
 }

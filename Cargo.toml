@@ -45,6 +45,10 @@ harness = false
 name = "determinism"
 required-features = ["serde"]
 
+[[test]]
+name = "serde_invariants"
+required-features = ["serde"]
+
 [lints.rust]
 missing_docs = "warn"
 unsafe_code = "forbid"
